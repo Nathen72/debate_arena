@@ -1,18 +1,35 @@
 import { generateText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
+import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import type { Expert, DebateTopic, DebateRound, AIProvider } from '@/types';
 
 // Get AI provider configuration
 function getAIModel(provider?: AIProvider) {
   const openaiKey = import.meta.env.VITE_OPENAI_API_KEY;
   const anthropicKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
+  const openrouterKey = import.meta.env.VITE_OPENROUTER_API_KEY;
   const defaultProvider = (import.meta.env.VITE_DEFAULT_AI_PROVIDER || 'openai') as AIProvider;
-  
-  // Prefer OpenAI if available (works better in browser due to CORS)
-  // Only use Anthropic if explicitly requested and OpenAI is not available
-  const selectedProvider = provider || (openaiKey ? 'openai' : (anthropicKey ? 'anthropic' : defaultProvider));
+  const openrouterModel = import.meta.env.VITE_OPENROUTER_MODEL || 'openai/gpt-4-turbo-preview';
 
+  // Determine which provider to use
+  const selectedProvider = provider ||
+    (openaiKey ? 'openai' :
+     (anthropicKey ? 'anthropic' :
+      (openrouterKey ? 'openrouter' : defaultProvider)));
+
+  // OpenRouter provider
+  if (selectedProvider === 'openrouter') {
+    if (!openrouterKey) {
+      throw new Error('OpenRouter API key is missing');
+    }
+    const openrouterProvider = createOpenRouter({
+      apiKey: openrouterKey,
+    });
+    return openrouterProvider(openrouterModel);
+  }
+
+  // Anthropic provider
   if (selectedProvider === 'anthropic') {
     if (!anthropicKey) {
       throw new Error('Anthropic API key is missing');
@@ -22,7 +39,8 @@ function getAIModel(provider?: AIProvider) {
     });
     return anthropicProvider('claude-3-5-sonnet-20241022');
   }
-  
+
+  // OpenAI provider (default)
   if (!openaiKey) {
     throw new Error('OpenAI API key is missing');
   }
@@ -146,12 +164,16 @@ Your response:`;
 export function validateAPIKeys(): { isValid: boolean; provider: AIProvider | null } {
   const openaiKey = import.meta.env.VITE_OPENAI_API_KEY;
   const anthropicKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
+  const openrouterKey = import.meta.env.VITE_OPENROUTER_API_KEY;
 
   if (openaiKey) {
     return { isValid: true, provider: 'openai' };
   }
   if (anthropicKey) {
     return { isValid: true, provider: 'anthropic' };
+  }
+  if (openrouterKey) {
+    return { isValid: true, provider: 'openrouter' };
   }
 
   return { isValid: false, provider: null };

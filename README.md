@@ -13,7 +13,8 @@ A beautifully designed debate platform powered by AI, where users can explore di
 ### 🤖 AI-Powered Debates
 - Generate 3-5 unique expert personas for any debate topic
 - Each expert has distinct personality, background, and position
-- Powered by OpenAI GPT-4 or Anthropic Claude via Vercel AI SDK
+- Powered by OpenAI GPT-4, Anthropic Claude, or OpenRouter via Vercel AI SDK
+- Access to 100+ models through OpenRouter integration
 
 ### 🎨 Beautiful Design
 - Vintage/whimsical aesthetic inspired by [Tavus](https://tavus.io) and [PostHog](https://posthog.com)
@@ -42,9 +43,10 @@ A beautifully designed debate platform powered by AI, where users can explore di
 ### Prerequisites
 
 - [Bun](https://bun.sh) (recommended) or Node.js 18+
-- An API key from either:
+- An API key from one of the following:
   - [OpenAI](https://platform.openai.com/api-keys) (recommended)
   - [Anthropic](https://console.anthropic.com/settings/keys)
+  - [OpenRouter](https://openrouter.ai/keys) (access to 100+ models)
 
 ### Installation
 
@@ -69,12 +71,17 @@ A beautifully designed debate platform powered by AI, where users can explore di
 
    Then edit `.env` and add at least one API key:
    ```env
-   # Choose one or both:
+   # Choose at least one provider:
    VITE_OPENAI_API_KEY=sk-...your-key-here
    VITE_ANTHROPIC_API_KEY=sk-ant-...your-key-here
+   VITE_OPENROUTER_API_KEY=sk-or-...your-key-here
 
-   # Optional: Set default provider (openai or anthropic)
+   # Optional: Set default provider (openai, anthropic, or openrouter)
    VITE_DEFAULT_AI_PROVIDER=openai
+
+   # Optional: Set OpenRouter model (defaults to openai/gpt-4-turbo-preview)
+   # See https://openrouter.ai/docs#models for available models
+   VITE_OPENROUTER_MODEL=openai/gpt-4-turbo-preview
    ```
 
 4. **Start development server**
@@ -100,8 +107,9 @@ A beautifully designed debate platform powered by AI, where users can explore di
 
 ### AI & Backend
 - **Vercel AI SDK** - Unified AI interface
-- **OpenAI GPT-4** - Text generation
+- **OpenAI GPT-4** - Primary text generation
 - **Anthropic Claude** - Alternative AI provider
+- **OpenRouter** - Access to 100+ AI models (GPT-4, Claude, Llama, Mistral, etc.)
 
 ### Storage
 - **LocalStorage** - Debate history persistence
@@ -172,11 +180,31 @@ debate_arena/
 
 ### AI Provider Selection
 
-The app automatically uses the first available API key. To explicitly set a provider:
+The app automatically uses the first available API key in this order: OpenAI → Anthropic → OpenRouter.
+
+To explicitly set a provider:
 
 ```env
-VITE_DEFAULT_AI_PROVIDER=openai  # or: anthropic
+VITE_DEFAULT_AI_PROVIDER=openai  # options: openai, anthropic, openrouter
 ```
+
+**Using OpenRouter:**
+
+OpenRouter gives you access to 100+ models from various providers. Configure your preferred model:
+
+```env
+VITE_OPENROUTER_API_KEY=sk-or-...
+VITE_OPENROUTER_MODEL=anthropic/claude-3.5-sonnet  # or any other model
+```
+
+Popular OpenRouter models:
+- `openai/gpt-4-turbo-preview` - OpenAI's GPT-4 Turbo (default)
+- `anthropic/claude-3.5-sonnet` - Anthropic's Claude 3.5 Sonnet
+- `meta-llama/llama-3.1-70b-instruct` - Meta's Llama 3.1
+- `google/gemini-pro-1.5` - Google's Gemini Pro
+- `mistralai/mistral-large` - Mistral's large model
+
+See [OpenRouter's model list](https://openrouter.ai/docs#models) for all available options.
 
 ### Customizing Topics
 
