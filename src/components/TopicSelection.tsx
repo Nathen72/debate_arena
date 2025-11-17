@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Search, Sparkles, TrendingUp } from 'lucide-react';
+import { Search, Sparkles, TrendingUp, History } from 'lucide-react';
 import { PRESET_TOPICS, searchTopics } from '@/lib/preset-topics';
 import type { DebateTopic } from '@/types';
 
 interface TopicSelectionProps {
   onSelectTopic: (topic: DebateTopic) => void;
+  onViewHistory?: () => void;
 }
 
-export function TopicSelection({ onSelectTopic }: TopicSelectionProps) {
+export function TopicSelection({ onSelectTopic, onViewHistory }: TopicSelectionProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [customTopic, setCustomTopic] = useState('');
   const [showCustom, setShowCustom] = useState(false);
@@ -31,7 +32,7 @@ export function TopicSelection({ onSelectTopic }: TopicSelectionProps) {
   };
 
   return (
-    <div className="min-h-screen py-12 px-4">
+    <div className="py-12 px-4">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <motion.div
@@ -39,9 +40,24 @@ export function TopicSelection({ onSelectTopic }: TopicSelectionProps) {
           animate={{ opacity: 1, y: 0 }}
           className="text-center mb-12"
         >
-          <h1 className="text-6xl md:text-7xl font-display font-bold text-vintage-ink mb-4">
-            Debate Arena
-          </h1>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex-1" />
+            <h1 className="text-6xl md:text-7xl font-display font-bold text-vintage-ink flex-1">
+              Debate Arena
+            </h1>
+            <div className="flex-1 flex justify-end">
+              {onViewHistory && (
+                <button
+                  onClick={onViewHistory}
+                  className="btn-secondary"
+                  title="View debate history"
+                >
+                  <History className="w-5 h-5 inline mr-2" />
+                  History
+                </button>
+              )}
+            </div>
+          </div>
           <p className="text-xl text-vintage-brown font-medium">
             Where ideas collide and perspectives emerge
           </p>

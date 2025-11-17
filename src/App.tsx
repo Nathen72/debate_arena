@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import { TopicSelection } from './components/TopicSelection';
 import { ExpertGeneration } from './components/ExpertGeneration';
 import { DebateView } from './components/DebateView';
+import { HistoryView } from './components/HistoryView';
+import { AppShell } from './components/AppShell';
 import { useDebateStore } from './stores/debateStore';
 import { validateAPIKeys } from './lib/ai-service';
 import { generateId } from './lib/utils';
 import type { DebateTopic, Expert, Debate } from './types';
 
-type AppState = 'topic-selection' | 'expert-generation' | 'debate' | 'api-key-missing';
+type AppState = 'topic-selection' | 'expert-generation' | 'debate' | 'voting' | 'history' | 'api-key-missing';
 
 function App() {
   const [appState, setAppState] = useState<AppState>('api-key-missing');
@@ -131,22 +133,50 @@ VITE_DEFAULT_AI_PROVIDER=openai`}
     );
   }
 
+  // Map appState to AppShell step
+  const getShellStep = (): 'topic-selection' | 'expert-generation' | 'debate' | 'voting' => {
+    if (appState === 'topic-selection') return 'topic-selection';
+    if (appState === 'expert-generation') return 'expert-generation';
+    if (appState === 'debate') return 'debate';
+    if (appState === 'voting') return 'voting';
+    return 'topic-selection';
+  };
+
   return (
     <>
       {appState === 'topic-selection' && (
-        <TopicSelection onSelectTopic={handleTopicSelect} />
+        <AppShell currentStep="topic-selection" showProgress={true}>
+          <TopicSelection
+            onSelectTopic={handleTopicSelect}
+            onViewHistory={() => setAppState('history')}
+          />
+        </AppShell>
+      )}
+
+      {appState === 'history' && (
+        <HistoryView onBack={() => setAppState('topic-selection')} />
       )}
 
       {appState === 'expert-generation' && selectedTopic && (
-        <ExpertGeneration
-          topic={selectedTopic}
-          onExpertsGenerated={handleExpertsGenerated}
-          onBack={handleBack}
-        />
+        <AppShell currentStep="expert-generation" showProgress={true}>
+          <ExpertGeneration
+            topic={selectedTopic}
+            onExpertsGenerated={handleExpertsGenerated}
+            onBack={handleBack}
+          />
+        </AppShell>
       )}
 
       {appState === 'debate' && currentDebate && (
-        <DebateView debate={currentDebate} onComplete={handleDebateComplete} />
+        <AppShell currentStep="debate" showProgress={true}>
+          <DebateView debate={currentDebate} onComplete={handleDebateComplete} />
+        </AppShell>
+      )}
+
+      {appState === 'voting' && currentDebate && (
+        <AppShell currentStep="voting" showProgress={true}>
+          {/* VotingPanel will be rendered by DebateView when debate completes */}
+        </AppShell>
       )}
     </>
   );

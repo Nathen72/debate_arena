@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Trophy, ThumbsUp, Home, History } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Trophy, ThumbsUp, Home, History, ChevronDown, ChevronUp, Loader2, Sparkles } from 'lucide-react';
 import { useDebateStore } from '@/stores/debateStore';
+import { generateDebateSummary } from '@/lib/ai-service';
 import type { Debate, Expert } from '@/types';
 
 interface VotingPanelProps {
@@ -10,16 +11,38 @@ interface VotingPanelProps {
 }
 
 export function VotingPanel({ debate, onComplete }: VotingPanelProps) {
-  const { addVote, saveDebateToHistory } = useDebateStore();
+  const { addVote, saveDebateToHistory, setDebateSummary, currentDebate } = useDebateStore();
   const [hasVoted, setHasVoted] = useState(false);
   const [selectedExpert, setSelectedExpert] = useState<string | null>(null);
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+  const [showSummary, setShowSummary] = useState(false);
+  
+  // Use current debate from store if available (may have summary), otherwise use prop
+  const debateWithSummary = currentDebate || debate;
 
-  const handleVote = (expertId: string) => {
+  const handleVote = async (expertId: string) => {
     if (hasVoted) return;
 
     addVote(expertId);
     setSelectedExpert(expertId);
     setHasVoted(true);
+    
+    // Generate summary after voting
+    if (!debateWithSummary.summary) {
+      setIsGeneratingSummary(true);
+      try {
+        const summary = await generateDebateSummary(debateWithSummary);
+        setDebateSummary(summary);
+        setShowSummary(true);
+      } catch (error) {
+        console.error('Failed to generate summary:', error);
+      } finally {
+        setIsGeneratingSummary(false);
+      }
+    } else {
+      setShowSummary(true);
+    }
+    
     saveDebateToHistory();
   };
 
@@ -31,11 +54,11 @@ export function VotingPanel({ debate, onComplete }: VotingPanelProps) {
   };
 
   // Calculate vote percentages
-  const totalVotes = Object.values(debate.votes || {}).reduce((a, b) => a + b, 0) || 1;
-  const expertVotes = debate.experts.map((expert) => ({
+  const totalVotes = Object.values(debateWithSummary.votes || {}).reduce((a, b) => a + b, 0) || 1;
+  const expertVotes = debateWithSummary.experts.map((expert) => ({
     expert,
-    votes: debate.votes?.[expert.id] || 0,
-    percentage: ((debate.votes?.[expert.id] || 0) / totalVotes) * 100,
+    votes: debateWithSummary.votes?.[expert.id] || 0,
+    percentage: ((debateWithSummary.votes?.[expert.id] || 0) / totalVotes) * 100,
   }));
 
   // Sort by votes
@@ -43,7 +66,7 @@ export function VotingPanel({ debate, onComplete }: VotingPanelProps) {
   const winner = expertVotes[0]!; // Safe: array always has at least one expert
 
   return (
-    <div className="min-h-screen py-12 px-4">
+    <div className="py-12 px-4">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <motion.div
@@ -156,12 +179,99 @@ export function VotingPanel({ debate, onComplete }: VotingPanelProps) {
           </button>
         </motion.div>
 
-        {/* Debate Summary */}
+        {/* Debate Summary & Key Takeaways */}
+        {(hasVoted || debateWithSummary.summary) && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: hasVoted ? 0.8 : 0 }}
+            className="mt-12"
+          >
+            <button
+              onClick={() => setShowSummary(!showSummary)}
+              className="w-full card-vintage p-6 text-left hover:border-primary-400 transition-all"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Sparkles className="w-5 h-5 text-primary-500" />
+                  <h3 className="text-xl font-display font-bold text-vintage-ink">
+                    Debate Summary & Key Takeaways
+                  </h3>
+                </div>
+                {isGeneratingSummary ? (
+                  <Loader2 className="w-5 h-5 animate-spin text-primary-500" />
+                ) : (
+                  showSummary ? (
+                    <ChevronUp className="w-5 h-5 text-vintage-brown" />
+                  ) : (
+                    <ChevronDown className="w-5 h-5 text-vintage-brown" />
+                  )
+                )}
+              </div>
+            </button>
+
+            <AnimatePresence>
+              {showSummary && debateWithSummary.summary && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className="overflow-hidden"
+                >
+                  <div className="card-vintage p-6 mt-4 space-y-6">
+                    {/* Summary */}
+                    <div>
+                      <h4 className="text-lg font-display font-bold text-vintage-ink mb-3">
+                        Summary
+                      </h4>
+                      <p className="text-vintage-darkBrown leading-relaxed whitespace-pre-wrap">
+                        {debateWithSummary.summary.summary}
+                      </p>
+                    </div>
+
+                    {/* Verdict */}
+                    <div>
+                      <h4 className="text-lg font-display font-bold text-vintage-ink mb-3">
+                        Moderator's Verdict
+                      </h4>
+                      <p className="text-vintage-darkBrown leading-relaxed whitespace-pre-wrap">
+                        {debateWithSummary.summary.verdict}
+                      </p>
+                    </div>
+
+                    {/* Key Takeaways */}
+                    {debateWithSummary.summary.keyTakeaways.length > 0 && (
+                      <div>
+                        <h4 className="text-lg font-display font-bold text-vintage-ink mb-3">
+                          Key Takeaways
+                        </h4>
+                        <ul className="space-y-2">
+                          {debateWithSummary.summary.keyTakeaways.map((takeaway, index) => (
+                            <li
+                              key={index}
+                              className="flex items-start gap-3 text-vintage-darkBrown"
+                            >
+                              <span className="text-primary-500 font-bold mt-1">•</span>
+                              <span className="flex-1">{takeaway}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        )}
+
+        {/* Saved to History */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 1 }}
-          className="mt-12 text-center"
+          className="mt-8 text-center"
         >
           <div className="inline-block px-6 py-3 bg-vintage-paper rounded-xl border-2 border-vintage-tan">
             <p className="text-vintage-brown text-sm">

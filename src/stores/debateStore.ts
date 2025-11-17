@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Debate, DebateState, Expert, DebateMessage, DebateRound } from '@/types';
+import type { Debate, DebateState, Expert, DebateMessage, DebateRound, DebateSummary } from '@/types';
 
 interface DebateStore extends DebateState {
   // Actions
@@ -10,6 +10,7 @@ interface DebateStore extends DebateState {
   setCurrentRound: (round: DebateRound) => void;
   completeDebate: () => void;
   addVote: (expertId: string) => void;
+  setDebateSummary: (summary: DebateSummary) => void;
   setIsGenerating: (isGenerating: boolean) => void;
   setError: (error: string | null) => void;
   saveDebateToHistory: () => void;
@@ -99,6 +100,17 @@ export const useDebateStore = create<DebateStore>()(
                 ...votes,
                 [expertId]: (votes[expertId] || 0) + 1,
               },
+            },
+          };
+        }),
+
+      setDebateSummary: (summary) =>
+        set((state) => {
+          if (!state.currentDebate) return state;
+          return {
+            currentDebate: {
+              ...state.currentDebate,
+              summary,
             },
           };
         }),

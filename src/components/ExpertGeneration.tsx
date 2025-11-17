@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
-import { Loader2, Sparkles, Users } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Loader2, Sparkles, Users, ChevronDown, ChevronUp, Settings } from 'lucide-react';
 import { generateExperts } from '@/lib/ai-service';
 import { ExpertCard } from './ExpertCard';
 import type { DebateTopic, Expert } from '@/types';
@@ -21,13 +21,21 @@ export function ExpertGeneration({
   const [error, setError] = useState<string | null>(null);
   const [allowFictional, setAllowFictional] = useState(false);
   const [showOptions, setShowOptions] = useState(true);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [numExperts, setNumExperts] = useState(3);
+  const [tone, setTone] = useState<'balanced' | 'formal' | 'casual'>('balanced');
+  const [diversity, setDiversity] = useState<'balanced' | 'diverse' | 'focused'>('balanced');
 
   const handleGenerate = async () => {
     try {
       setShowOptions(false);
       setIsGenerating(true);
       setError(null);
-      const generatedExperts = await generateExperts(topic, allowFictional);
+      const generatedExperts = await generateExperts(topic, allowFictional, {
+        numExperts,
+        tone,
+        diversity,
+      });
       setExperts(generatedExperts);
       setIsGenerating(false);
     } catch (err) {
@@ -58,7 +66,7 @@ export function ExpertGeneration({
   };
 
   return (
-    <div className="min-h-screen py-12 px-4">
+    <div className="py-12 px-4">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <motion.div
@@ -136,9 +144,115 @@ export function ExpertGeneration({
                 </label>
               </div>
 
+              {/* Advanced Options */}
+              <div className="mt-6 pt-6 border-t-2 border-vintage-tan">
+                <button
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                  className="w-full flex items-center justify-between text-left p-3 rounded-lg hover:bg-vintage-cream transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <Settings className="w-5 h-5 text-vintage-brown" />
+                    <span className="font-medium text-vintage-ink">Advanced Options</span>
+                  </div>
+                  {showAdvanced ? (
+                    <ChevronUp className="w-5 h-5 text-vintage-brown" />
+                  ) : (
+                    <ChevronDown className="w-5 h-5 text-vintage-brown" />
+                  )}
+                </button>
+
+                <AnimatePresence>
+                  {showAdvanced && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.3 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="mt-4 space-y-4 p-4 bg-vintage-cream rounded-lg">
+                        {/* Number of Experts */}
+                        <div>
+                          <label className="block text-sm font-medium text-vintage-ink mb-2">
+                            Number of Experts: {numExperts}
+                          </label>
+                          <input
+                            type="range"
+                            min="2"
+                            max="6"
+                            value={numExperts}
+                            onChange={(e) => setNumExperts(parseInt(e.target.value))}
+                            className="w-full h-2 bg-vintage-tan rounded-lg appearance-none cursor-pointer accent-primary-500"
+                          />
+                          <div className="flex justify-between text-xs text-vintage-brown mt-1">
+                            <span>2</span>
+                            <span>3-4 (Recommended)</span>
+                            <span>5-6</span>
+                          </div>
+                        </div>
+
+                        {/* Tone */}
+                        <div>
+                          <label className="block text-sm font-medium text-vintage-ink mb-2">
+                            Overall Tone
+                          </label>
+                          <div className="grid grid-cols-3 gap-2">
+                            {(['balanced', 'formal', 'casual'] as const).map((t) => (
+                              <button
+                                key={t}
+                                onClick={() => setTone(t)}
+                                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                                  tone === t
+                                    ? 'bg-primary-500 text-white'
+                                    : 'bg-vintage-paper text-vintage-brown hover:bg-vintage-tan'
+                                }`}
+                              >
+                                {t.charAt(0).toUpperCase() + t.slice(1)}
+                              </button>
+                            ))}
+                          </div>
+                          <p className="text-xs text-vintage-brown mt-2">
+                            {tone === 'balanced' && 'Mix of formal and casual communication styles'}
+                            {tone === 'formal' && 'Professional, academic, and structured arguments'}
+                            {tone === 'casual' && 'Conversational, accessible, and relatable'}
+                          </p>
+                        </div>
+
+                        {/* Diversity */}
+                        <div>
+                          <label className="block text-sm font-medium text-vintage-ink mb-2">
+                            Viewpoint Diversity
+                          </label>
+                          <div className="grid grid-cols-3 gap-2">
+                            {(['balanced', 'diverse', 'focused'] as const).map((d) => (
+                              <button
+                                key={d}
+                                onClick={() => setDiversity(d)}
+                                className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                                  diversity === d
+                                    ? 'bg-primary-500 text-white'
+                                    : 'bg-vintage-paper text-vintage-brown hover:bg-vintage-tan'
+                                }`}
+                              >
+                                {d.charAt(0).toUpperCase() + d.slice(1)}
+                              </button>
+                            ))}
+                          </div>
+                          <p className="text-xs text-vintage-brown mt-2">
+                            {diversity === 'balanced' && 'Mix of perspectives with some overlap'}
+                            {diversity === 'diverse' && 'Maximum variety of viewpoints and backgrounds'}
+                            {diversity === 'focused' && 'Experts with similar expertise but different angles'}
+                          </p>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
               <button
                 onClick={handleGenerate}
-                className="btn-primary w-full text-lg"
+                className="btn-primary w-full text-lg mt-6"
               >
                 <Sparkles className="w-5 h-5 inline mr-2" />
                 Generate Expert Panel

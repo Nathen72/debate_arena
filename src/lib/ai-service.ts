@@ -2,7 +2,7 @@ import { generateText, streamText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
-import type { Expert, DebateTopic, DebateRound, AIProvider } from '@/types';
+import type { Expert, DebateTopic, DebateRound, AIProvider, Debate, DebateSummary } from '@/types';
 
 // Get AI provider configuration
 function getAIModel(provider?: AIProvider) {
@@ -66,16 +66,36 @@ function getAIModel(provider?: AIProvider) {
   return openaiProvider('gpt-4-turbo-preview');
 }
 
+interface ExpertGenerationOptions {
+  numExperts?: number;
+  tone?: 'balanced' | 'formal' | 'casual';
+  diversity?: 'balanced' | 'diverse' | 'focused';
+}
+
 // Generate debate experts based on topic
 export async function generateExperts(
   topic: DebateTopic,
-  allowFictional: boolean = false
+  allowFictional: boolean = false,
+  options: ExpertGenerationOptions = {}
 ): Promise<Expert[]> {
   const model = getAIModel();
+  const { numExperts = 3, tone = 'balanced', diversity = 'balanced' } = options;
 
   const expertTypeInstruction = allowFictional
-    ? "Generate 3-5 experts who would have interesting perspectives on this topic. You may include BOTH real-world experts AND fictional experts. For real experts, use their actual names, backgrounds, and known positions. For fictional experts, create believable characters."
-    : "CRITICAL: Generate 3-5 REAL-WORLD experts ONLY. These MUST be actual, well-known people (living or historical) who have publicly expressed views or have expertise relevant to this topic. DO NOT create fictional characters. DO NOT make up names. Every expert must be a real person with verifiable credentials and public statements. Include both supporters and critics, and optionally a neutral expert.";
+    ? `Generate ${numExperts} experts who would have interesting perspectives on this topic. You may include BOTH real-world experts AND fictional experts. For real experts, use their actual names, backgrounds, and known positions. For fictional experts, create believable characters.`
+    : `CRITICAL: Generate exactly ${numExperts} REAL-WORLD experts ONLY. These MUST be actual, well-known people (living or historical) who have publicly expressed views or have expertise relevant to this topic. DO NOT create fictional characters. DO NOT make up names. Every expert must be a real person with verifiable credentials and public statements. Include both supporters and critics, and optionally a neutral expert.`;
+
+  const toneInstruction = {
+    balanced: 'Mix of communication styles - some experts should be more formal/academic, others more conversational.',
+    formal: 'All experts should communicate in a professional, academic, and structured manner. Use formal language and well-organized arguments.',
+    casual: 'Experts should communicate in a conversational, accessible, and relatable style. Use everyday language and relatable examples.',
+  }[tone];
+
+  const diversityInstruction = {
+    balanced: 'Include a mix of perspectives with some overlap in expertise areas. Aim for variety but allow some common ground.',
+    diverse: 'Maximize variety - include experts from different backgrounds, fields, cultures, and viewpoints. Ensure maximum diversity of perspectives.',
+    focused: 'Select experts with similar core expertise but different angles or specializations. They should share domain knowledge but approach the topic differently.',
+  }[diversity];
 
   const prompt = `You are an expert at identifying relevant domain experts for debates.
 
@@ -83,6 +103,10 @@ Given this debate topic: "${topic.title}"
 Description: ${topic.description}
 
 ${expertTypeInstruction}
+
+Tone & Communication Style: ${toneInstruction}
+
+Viewpoint Diversity: ${diversityInstruction}
 
 For each expert, provide:
 1. Their REAL, actual name (${allowFictional ? 'for real people, or a distinctive fictional name if fictional' : 'MUST be a real person - no fictional names allowed'})
@@ -132,11 +156,18 @@ Return ONLY valid JSON in this exact format, no markdown or extra text:
     const parsed = JSON.parse(jsonText);
 
     // Add IDs to experts and ensure isReal field exists
-    const experts = parsed.experts.map((expert: Omit<Expert, 'id'>, index: number) => ({
+    let experts = parsed.experts.map((expert: Omit<Expert, 'id'>, index: number) => ({
       ...expert,
       id: `expert-${Date.now()}-${index}`,
       isReal: expert.isReal ?? !allowFictional, // Default to real if not specified
     }));
+
+    // Ensure we have the requested number of experts (take first N if more, or note if fewer)
+    if (experts.length > numExperts) {
+      experts = experts.slice(0, numExperts);
+    } else if (experts.length < numExperts) {
+      console.warn(`Requested ${numExperts} experts but only got ${experts.length}`);
+    }
 
     // Validation: If allowFictional is false, ensure all experts are marked as real
     if (!allowFictional) {
@@ -144,7 +175,7 @@ Return ONLY valid JSON in this exact format, no markdown or extra text:
       if (fictionalExperts.length > 0) {
         console.warn(`Warning: ${fictionalExperts.length} expert(s) were marked as fictional but should be real. Forcing isReal=true.`, fictionalExperts.map(e => e.name));
         // Force all experts to be real when allowFictional is false
-        return experts.map(expert => ({ ...expert, isReal: true }));
+        experts = experts.map(expert => ({ ...expert, isReal: true }));
       }
     }
 
@@ -318,6 +349,84 @@ export async function generateDebateResponse(
     throw new Error(`Failed to generate response for ${expert.name}: ${errorMessage}`);
   }
 }
+
+// Generate debate summary and verdict
+export async function generateDebateSummary(debate: Debate): Promise<DebateSummary> {
+  const model = getAIModel();
+
+  // Organize messages by expert and round
+  const messagesByExpert = debate.experts.map((expert) => {
+    const expertMessages = debate.messages
+      .filter((m) => m.expertId === expert.id)
+      .map((m) => {
+        const roundLabel = ROUNDS.find((r) => r.key === m.round)?.label || m.round;
+        return `[${roundLabel}] ${m.content}`;
+      })
+      .join('\n\n');
+    return `${expert.name} (${expert.expertise}, Position: ${expert.position}):\n${expertMessages}`;
+  });
+
+  const fullTranscript = messagesByExpert.join('\n\n---\n\n');
+
+  const prompt = `You are a neutral debate moderator analyzing a completed debate.
+
+Debate Topic: ${debate.topic.title}
+${debate.topic.description}
+
+Participants:
+${debate.experts.map((e) => `- ${e.name} (${e.expertise}, ${e.position})`).join('\n')}
+
+Full Debate Transcript:
+${fullTranscript}
+
+Your task is to provide:
+1. A concise summary (2-3 paragraphs) that captures the main arguments from each expert
+2. A neutral moderator's verdict (2-3 paragraphs) that highlights the most compelling reasoning presented, regardless of who won the popular vote. Focus on the strength of arguments, evidence, and logic.
+3. 3-5 key takeaways (bullet points) that capture the most important insights from this debate
+
+Return ONLY valid JSON in this exact format, no markdown or extra text:
+{
+  "summary": "Concise 2-3 paragraph summary of main arguments from each expert...",
+  "verdict": "Neutral moderator verdict highlighting most compelling reasoning...",
+  "keyTakeaways": [
+    "First key takeaway",
+    "Second key takeaway",
+    "Third key takeaway"
+  ]
+}`;
+
+  try {
+    const { text } = await generateText({
+      model,
+      prompt,
+      temperature: 0.7,
+    });
+
+    // Parse the JSON response
+    let jsonText = text.trim();
+    if (jsonText.startsWith('```')) {
+      jsonText = jsonText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+    }
+    const parsed = JSON.parse(jsonText);
+
+    return {
+      summary: parsed.summary || '',
+      verdict: parsed.verdict || '',
+      keyTakeaways: parsed.keyTakeaways || [],
+    };
+  } catch (error) {
+    console.error('Error generating debate summary:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to generate debate summary: ${errorMessage}`);
+  }
+}
+
+const ROUNDS: { key: DebateRound; label: string }[] = [
+  { key: 'opening', label: 'Opening Statements' },
+  { key: 'arguments', label: 'Main Arguments' },
+  { key: 'rebuttals', label: 'Rebuttals' },
+  { key: 'closing', label: 'Closing Statements' },
+];
 
 // Validate API keys
 export function validateAPIKeys(): { isValid: boolean; provider: AIProvider | null } {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, ArrowRight, Trophy } from 'lucide-react';
+import { Loader2, ArrowRight, Trophy, Play, Pause, RotateCcw } from 'lucide-react';
 import { generateDebateResponseStream } from '@/lib/ai-service';
 import { useDebateStore } from '@/stores/debateStore';
 import { DebateMessage } from './DebateMessage';
@@ -25,7 +25,10 @@ export function DebateView({ debate, onComplete }: DebateViewProps) {
   const [currentExpertIndex, setCurrentExpertIndex] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
   const [showVoting, setShowVoting] = useState(false);
+  const [autoAdvance, setAutoAdvance] = useState(true);
   const generatingRef = useRef<Set<string>>(new Set()); // Track expertId-round combinations being generated
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   const currentRound = ROUNDS[currentRoundIndex];
   const isLastRound = currentRoundIndex === ROUNDS.length - 1;
@@ -59,20 +62,24 @@ export function DebateView({ debate, onComplete }: DebateViewProps) {
           completeDebate();
           setTimeout(() => setShowVoting(true), 1000);
         } else {
-          setTimeout(() => {
-            const nextIndex = currentRoundIndex + 1;
-            setCurrentRoundIndex(nextIndex);
-            setCurrentExpertIndex(0);
-            const nextRound = ROUNDS[nextIndex];
-            if (nextRound) {
-              setCurrentRound(nextRound.key);
-            }
-          }, 1500);
+          if (autoAdvance) {
+            setTimeout(() => {
+              const nextIndex = currentRoundIndex + 1;
+              setCurrentRoundIndex(nextIndex);
+              setCurrentExpertIndex(0);
+              const nextRound = ROUNDS[nextIndex];
+              if (nextRound) {
+                setCurrentRound(nextRound.key);
+              }
+            }, 1500);
+          }
         }
       } else {
-        setTimeout(() => {
-          setCurrentExpertIndex(currentExpertIndex + 1);
-        }, 1000);
+        if (autoAdvance) {
+          setTimeout(() => {
+            setCurrentExpertIndex(currentExpertIndex + 1);
+          }, 1000);
+        }
       }
       return;
     }
@@ -130,7 +137,7 @@ export function DebateView({ debate, onComplete }: DebateViewProps) {
         updateMessageContent(expert.id, currentRound.key, response);
       }
 
-      // Move to next expert or round
+      // Move to next expert or round (with auto-advance support)
       if (isLastExpert) {
         if (isLastRound) {
           // Debate complete
@@ -138,21 +145,25 @@ export function DebateView({ debate, onComplete }: DebateViewProps) {
           setTimeout(() => setShowVoting(true), 1000);
         } else {
           // Next round
-          setTimeout(() => {
-            const nextIndex = currentRoundIndex + 1;
-            setCurrentRoundIndex(nextIndex);
-            setCurrentExpertIndex(0);
-            const nextRound = ROUNDS[nextIndex];
-            if (nextRound) {
-              setCurrentRound(nextRound.key);
-            }
-          }, 1500);
+          if (autoAdvance) {
+            setTimeout(() => {
+              const nextIndex = currentRoundIndex + 1;
+              setCurrentRoundIndex(nextIndex);
+              setCurrentExpertIndex(0);
+              const nextRound = ROUNDS[nextIndex];
+              if (nextRound) {
+                setCurrentRound(nextRound.key);
+              }
+            }, 1500);
+          }
         }
       } else {
         // Next expert in same round
-        setTimeout(() => {
-          setCurrentExpertIndex(currentExpertIndex + 1);
-        }, 1000);
+        if (autoAdvance) {
+          setTimeout(() => {
+            setCurrentExpertIndex(currentExpertIndex + 1);
+          }, 1000);
+        }
       }
     } catch (error) {
       console.error('Error generating response:', error);
@@ -193,6 +204,26 @@ export function DebateView({ debate, onComplete }: DebateViewProps) {
     ? debate.messages.filter((m) => m.round === currentRound.key)
     : [];
 
+  // Auto-scroll to latest message
+  useEffect(() => {
+    if (messagesEndRef.current && messagesContainerRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [currentRoundMessages.length, isGenerating]);
+
+  // Keyboard shortcut for continue (space bar)
+  useEffect(() => {
+    const handleKeyPress = (e: KeyboardEvent) => {
+      if (e.key === ' ' && !isGenerating && !showVoting && e.target === document.body) {
+        e.preventDefault();
+        handleContinue();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [isGenerating, showVoting, handleContinue]);
+
   if (showVoting) {
     return <VotingPanel debate={debate} onComplete={onComplete} />;
   }
@@ -202,7 +233,7 @@ export function DebateView({ debate, onComplete }: DebateViewProps) {
   }
 
   return (
-    <div className="min-h-screen py-12 px-4">
+    <div className="py-12 px-4">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <motion.div
@@ -247,21 +278,62 @@ export function DebateView({ debate, onComplete }: DebateViewProps) {
           </div>
         </div>
 
-        {/* Current Round Info */}
+        {/* Current Round Info & Current Speaker */}
         <motion.div
           key={currentRound.key}
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="card-vintage p-6 mb-8 text-center"
+          className="card-vintage p-6 mb-6"
         >
-          <h3 className="text-2xl font-display font-bold text-vintage-ink mb-2">
-            {currentRound.label}
-          </h3>
-          <p className="text-vintage-brown">{currentRound.description}</p>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="text-xl font-display font-bold text-vintage-ink mb-1">
+                {currentRound.label}
+              </h3>
+              <p className="text-sm text-vintage-brown">{currentRound.description}</p>
+            </div>
+            {isGenerating && debate.experts[currentExpertIndex] && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="flex items-center gap-3 px-4 py-2 bg-primary-50 rounded-lg border-2 border-primary-200"
+              >
+                <span className="text-2xl">{debate.experts[currentExpertIndex]?.avatar}</span>
+                <div>
+                  <div className="text-sm font-medium text-vintage-ink">
+                    {debate.experts[currentExpertIndex]?.name} is speaking
+                  </div>
+                  <div className="text-xs text-vintage-brown">
+                    {debate.experts[currentExpertIndex]?.expertise}
+                  </div>
+                </div>
+                <Loader2 className="w-4 h-4 animate-spin text-primary-500" />
+              </motion.div>
+            )}
+          </div>
         </motion.div>
 
+        {/* Playback Controls */}
+        <div className="flex items-center justify-center gap-3 mb-6">
+          <button
+            onClick={() => setAutoAdvance(!autoAdvance)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg border-2 transition-all ${
+              autoAdvance
+                ? 'bg-primary-50 border-primary-300 text-primary-700'
+                : 'bg-vintage-paper border-vintage-tan text-vintage-brown hover:border-vintage-brown'
+            }`}
+            title={autoAdvance ? 'Auto-advance enabled (Space to continue manually)' : 'Auto-advance disabled'}
+          >
+            {autoAdvance ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+            <span className="text-sm font-medium">
+              {autoAdvance ? 'Auto-advance ON' : 'Auto-advance OFF'}
+            </span>
+          </button>
+          <span className="text-xs text-vintage-brown">Press Space to continue</span>
+        </div>
+
         {/* Messages */}
-        <div className="space-y-6 mb-8">
+        <div ref={messagesContainerRef} className="space-y-6 mb-8">
           <AnimatePresence>
             {currentRoundMessages.map((message, index) => {
               const expert = debate.experts.find((e) => e.id === message.expertId);
@@ -276,6 +348,7 @@ export function DebateView({ debate, onComplete }: DebateViewProps) {
               );
             })}
           </AnimatePresence>
+          <div ref={messagesEndRef} />
         </div>
 
         {/* Continue Button or Loading */}
@@ -288,7 +361,7 @@ export function DebateView({ debate, onComplete }: DebateViewProps) {
             <div className="inline-flex items-center gap-3 px-6 py-4 bg-vintage-paper rounded-xl border-2 border-vintage-tan">
               <Loader2 className="w-5 h-5 animate-spin text-primary-500" />
               <span className="font-medium text-vintage-ink">
-                {debate.experts[currentExpertIndex]?.name || 'An expert'} is speaking...
+                Generating response...
               </span>
             </div>
           ) : (

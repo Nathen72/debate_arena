@@ -27,6 +27,12 @@ export interface DebateMessage {
   timestamp: Date;
 }
 
+export interface DebateSummary {
+  summary: string; // Concise summary of main arguments from each expert
+  verdict: string; // Neutral moderator verdict highlighting most compelling reasoning
+  keyTakeaways: string[]; // Key points from the debate
+}
+
 export interface Debate {
   id: string;
   topic: DebateTopic;
@@ -35,6 +41,7 @@ export interface Debate {
   currentRound: DebateRound;
   isComplete: boolean;
   votes?: Record<string, number>; // expertId -> vote count
+  summary?: DebateSummary; // AI-generated summary and verdict
   createdAt: Date;
 }
 
