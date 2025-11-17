@@ -1,0 +1,99 @@
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import type { Debate, DebateState, Expert, DebateMessage, DebateRound } from '@/types';
+
+interface DebateStore extends DebateState {
+  // Actions
+  setCurrentDebate: (debate: Debate | null) => void;
+  addMessage: (message: DebateMessage) => void;
+  setCurrentRound: (round: DebateRound) => void;
+  completeDebate: () => void;
+  addVote: (expertId: string) => void;
+  setIsGenerating: (isGenerating: boolean) => void;
+  setError: (error: string | null) => void;
+  saveDebateToHistory: () => void;
+  clearCurrentDebate: () => void;
+}
+
+export const useDebateStore = create<DebateStore>()(
+  persist(
+    (set, get) => ({
+      // Initial state
+      currentDebate: null,
+      debateHistory: [],
+      isGenerating: false,
+      error: null,
+
+      // Actions
+      setCurrentDebate: (debate) => set({ currentDebate: debate, error: null }),
+
+      addMessage: (message) =>
+        set((state) => {
+          if (!state.currentDebate) return state;
+          return {
+            currentDebate: {
+              ...state.currentDebate,
+              messages: [...state.currentDebate.messages, message],
+            },
+          };
+        }),
+
+      setCurrentRound: (round) =>
+        set((state) => {
+          if (!state.currentDebate) return state;
+          return {
+            currentDebate: {
+              ...state.currentDebate,
+              currentRound: round,
+            },
+          };
+        }),
+
+      completeDebate: () =>
+        set((state) => {
+          if (!state.currentDebate) return state;
+          return {
+            currentDebate: {
+              ...state.currentDebate,
+              isComplete: true,
+            },
+          };
+        }),
+
+      addVote: (expertId) =>
+        set((state) => {
+          if (!state.currentDebate) return state;
+          const votes = state.currentDebate.votes || {};
+          return {
+            currentDebate: {
+              ...state.currentDebate,
+              votes: {
+                ...votes,
+                [expertId]: (votes[expertId] || 0) + 1,
+              },
+            },
+          };
+        }),
+
+      setIsGenerating: (isGenerating) => set({ isGenerating }),
+
+      setError: (error) => set({ error }),
+
+      saveDebateToHistory: () =>
+        set((state) => {
+          if (!state.currentDebate) return state;
+          return {
+            debateHistory: [state.currentDebate, ...state.debateHistory].slice(0, 10), // Keep last 10
+          };
+        }),
+
+      clearCurrentDebate: () => set({ currentDebate: null, error: null }),
+    }),
+    {
+      name: 'debate-storage',
+      partialize: (state) => ({
+        debateHistory: state.debateHistory,
+      }),
+    }
+  )
+);
