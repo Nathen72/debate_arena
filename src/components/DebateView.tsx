@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, ArrowRight, Trophy } from 'lucide-react';
-import { generateDebateResponse } from '@/lib/ai-service';
+import { generateDebateResponseStream } from '@/lib/ai-service';
 import { useDebateStore } from '@/stores/debateStore';
 import { DebateMessage } from './DebateMessage';
 import { VotingPanel } from './VotingPanel';
@@ -20,11 +20,12 @@ const ROUNDS: { key: DebateRound; label: string; description: string }[] = [
 ];
 
 export function DebateView({ debate, onComplete }: DebateViewProps) {
-  const { addMessage, setCurrentRound, completeDebate } = useDebateStore();
+  const { addMessage, updateMessageContent, setCurrentRound, completeDebate, currentDebate } = useDebateStore();
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
   const [currentExpertIndex, setCurrentExpertIndex] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
   const [showVoting, setShowVoting] = useState(false);
+  const generatingRef = useRef<Set<string>>(new Set()); // Track expertId-round combinations being generated
 
   const currentRound = ROUNDS[currentRoundIndex];
   const isLastRound = currentRoundIndex === ROUNDS.length - 1;
@@ -33,13 +34,56 @@ export function DebateView({ debate, onComplete }: DebateViewProps) {
   const generateNextResponse = async () => {
     if (isGenerating || !currentRound) return;
 
-    setIsGenerating(true);
     const expert = debate.experts[currentExpertIndex];
     if (!expert) return;
 
+    // Create unique key for this expert-round combination
+    const generationKey = `${expert.id}-${currentRound.key}`;
+
+    // Check if we're already generating for this expert-round combination
+    if (generatingRef.current.has(generationKey)) {
+      console.log(`Already generating for ${expert.name} in ${currentRound.key}, skipping`);
+      return;
+    }
+
+    // Check if this expert already has a message in the current round
+    // Use the store's current debate state to get the most up-to-date messages
+    const currentDebateState = currentDebate || debate;
+    const existingMessage = currentDebateState.messages.find(
+      (m) => m.expertId === expert.id && m.round === currentRound.key
+    );
+    if (existingMessage) {
+      // Expert already spoke in this round, move to next expert
+      if (isLastExpert) {
+        if (isLastRound) {
+          completeDebate();
+          setTimeout(() => setShowVoting(true), 1000);
+        } else {
+          setTimeout(() => {
+            const nextIndex = currentRoundIndex + 1;
+            setCurrentRoundIndex(nextIndex);
+            setCurrentExpertIndex(0);
+            const nextRound = ROUNDS[nextIndex];
+            if (nextRound) {
+              setCurrentRound(nextRound.key);
+            }
+          }, 1500);
+        }
+      } else {
+        setTimeout(() => {
+          setCurrentExpertIndex(currentExpertIndex + 1);
+        }, 1000);
+      }
+      return;
+    }
+
+    // Mark as generating
+    generatingRef.current.add(generationKey);
+    setIsGenerating(true);
+
     try {
-      // Get previous messages for context
-      const previousMessages = debate.messages
+      // Get previous messages for context (use current debate state)
+      const previousMessages = currentDebateState.messages
         .filter((m) => m.round === currentRound.key)
         .map((m) => {
           const exp = debate.experts.find((e) => e.id === m.expertId);
@@ -49,21 +93,42 @@ export function DebateView({ debate, onComplete }: DebateViewProps) {
       // Get other experts for context
       const otherExperts = debate.experts.filter((e) => e.id !== expert.id);
 
-      const response = await generateDebateResponse(
+      // Create initial empty message for streaming (before we start)
+      const finalDebateState = currentDebate || debate;
+      const stillExists = finalDebateState.messages.find(
+        (m) => m.expertId === expert.id && m.round === currentRound.key
+      );
+      
+      if (!stillExists) {
+        // Create message with empty content initially for streaming
+        addMessage({
+          expertId: expert.id,
+          round: currentRound.key,
+          content: '',
+          timestamp: new Date(),
+        });
+      }
+
+      // Accumulate content as chunks arrive
+      let accumulatedContent = '';
+
+      const response = await generateDebateResponseStream(
         expert,
         debate.topic,
         currentRound.key,
+        (chunk: string) => {
+          // Accumulate content and update message in real-time
+          accumulatedContent += chunk;
+          updateMessageContent(expert.id, currentRound.key, accumulatedContent);
+        },
         previousMessages,
         otherExperts
       );
 
-      // Add message to store
-      addMessage({
-        expertId: expert.id,
-        round: currentRound.key,
-        content: response,
-        timestamp: new Date(),
-      });
+      // Final update with cleaned text (handles any post-processing)
+      if (response !== accumulatedContent) {
+        updateMessageContent(expert.id, currentRound.key, response);
+      }
 
       // Move to next expert or round
       if (isLastExpert) {
@@ -92,15 +157,31 @@ export function DebateView({ debate, onComplete }: DebateViewProps) {
     } catch (error) {
       console.error('Error generating response:', error);
     } finally {
+      // Remove from generating set
+      generatingRef.current.delete(generationKey);
       setIsGenerating(false);
     }
   };
 
   useEffect(() => {
     // Auto-generate first response when component mounts
-    if (debate.messages.length === 0) {
-      setTimeout(() => generateNextResponse(), 500);
+    // Only if there are no messages and we're not already generating
+    if (debate.messages.length === 0 && !isGenerating && currentRound) {
+      const expert = debate.experts[currentExpertIndex];
+      if (expert) {
+        const generationKey = `${expert.id}-${currentRound.key}`;
+        // Check both the ref and existing messages
+        const hasMessage = debate.messages.some(
+          (m) => m.expertId === expert.id && m.round === currentRound.key
+        );
+        const isGenerating = generatingRef.current.has(generationKey);
+        
+        if (!hasMessage && !isGenerating) {
+          setTimeout(() => generateNextResponse(), 500);
+        }
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleContinue = () => {
@@ -187,7 +268,7 @@ export function DebateView({ debate, onComplete }: DebateViewProps) {
               if (!expert) return null;
               return (
                 <DebateMessage
-                  key={`${message.expertId}-${message.round}-${index}`}
+                  key={`${message.expertId}-${message.round}-${message.timestamp.getTime()}-${index}`}
                   expert={expert}
                   content={message.content}
                   index={index}

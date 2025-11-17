@@ -1,4 +1,4 @@
-import { generateText } from 'ai';
+import { generateText, streamText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
@@ -75,7 +75,7 @@ export async function generateExperts(
 
   const expertTypeInstruction = allowFictional
     ? "Generate 3-5 experts who would have interesting perspectives on this topic. You may include BOTH real-world experts AND fictional experts. For real experts, use their actual names, backgrounds, and known positions. For fictional experts, create believable characters."
-    : "Generate 3-5 REAL-WORLD experts who would have interesting perspectives on this topic. These MUST be actual, well-known people (living or historical) who have publicly expressed views or have expertise relevant to this topic. Include both supporters and critics, and optionally a neutral expert.";
+    : "CRITICAL: Generate 3-5 REAL-WORLD experts ONLY. These MUST be actual, well-known people (living or historical) who have publicly expressed views or have expertise relevant to this topic. DO NOT create fictional characters. DO NOT make up names. Every expert must be a real person with verifiable credentials and public statements. Include both supporters and critics, and optionally a neutral expert.";
 
   const prompt = `You are an expert at identifying relevant domain experts for debates.
 
@@ -85,14 +85,14 @@ Description: ${topic.description}
 ${expertTypeInstruction}
 
 For each expert, provide:
-1. Their REAL name (for real people) or a distinctive fictional name
+1. Their REAL, actual name (${allowFictional ? 'for real people, or a distinctive fictional name if fictional' : 'MUST be a real person - no fictional names allowed'})
 2. Their area of expertise
 3. Their likely position on this specific topic (pro, con, or neutral)
 4. A single emoji that represents them
 5. A detailed personality description including their communication style, known speaking patterns, catchphrases, or mannerisms
 6. Their background and credentials
-7. Notable works, quotes, or public statements (for real people)
-8. Whether they are real (true) or fictional (false)
+7. Notable works, quotes, or public statements (${allowFictional ? 'for real people' : 'REQUIRED - must reference actual public statements or works'})
+8. Whether they are real (true) or fictional (false) - ${allowFictional ? 'can be either' : 'MUST be true for all experts'}
 
 Examples of real experts for different topics:
 - Commercial Space Flight: Elon Musk (pro), Neil deGrasse Tyson (neutral), critics of privatization
@@ -132,11 +132,23 @@ Return ONLY valid JSON in this exact format, no markdown or extra text:
     const parsed = JSON.parse(jsonText);
 
     // Add IDs to experts and ensure isReal field exists
-    return parsed.experts.map((expert: Omit<Expert, 'id'>, index: number) => ({
+    const experts = parsed.experts.map((expert: Omit<Expert, 'id'>, index: number) => ({
       ...expert,
       id: `expert-${Date.now()}-${index}`,
       isReal: expert.isReal ?? !allowFictional, // Default to real if not specified
     }));
+
+    // Validation: If allowFictional is false, ensure all experts are marked as real
+    if (!allowFictional) {
+      const fictionalExperts = experts.filter(expert => !expert.isReal);
+      if (fictionalExperts.length > 0) {
+        console.warn(`Warning: ${fictionalExperts.length} expert(s) were marked as fictional but should be real. Forcing isReal=true.`, fictionalExperts.map(e => e.name));
+        // Force all experts to be real when allowFictional is false
+        return experts.map(expert => ({ ...expert, isReal: true }));
+      }
+    }
+
+    return experts;
   } catch (error) {
     console.error('Error generating experts:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -144,16 +156,44 @@ Return ONLY valid JSON in this exact format, no markdown or extra text:
   }
 }
 
-// Generate a debate response for a specific expert and round
-export async function generateDebateResponse(
+// Helper function to clean text (removes stage directions, etc.)
+function cleanText(text: string): string {
+  let cleanedText = text.trim();
+  
+  // Remove lines that are entirely in asterisks (stage directions)
+  cleanedText = cleanedText
+    .split('\n')
+    .filter(line => {
+      const trimmed = line.trim();
+      // Skip lines that are entirely stage directions (wrapped in asterisks)
+      if (trimmed.startsWith('*') && trimmed.endsWith('*')) {
+        return false;
+      }
+      // Skip lines that are mostly asterisks with action descriptions
+      if (trimmed.match(/^\*[^*]+\*$/)) {
+        return false;
+      }
+      return true;
+    })
+    .join('\n');
+  
+  // Remove inline stage directions (text in asterisks within sentences)
+  cleanedText = cleanedText.replace(/\*[^*]+\*/g, '');
+  
+  // Clean up extra whitespace
+  cleanedText = cleanedText.replace(/\n\s*\n\s*\n/g, '\n\n').trim();
+
+  return cleanedText;
+}
+
+// Build prompt for debate response
+function buildDebatePrompt(
   expert: Expert,
   topic: DebateTopic,
   round: DebateRound,
   previousMessages: string[] = [],
   otherExperts: Expert[] = []
-): Promise<string> {
-  const model = getAIModel();
-
+): string {
   const roundInstructions: Record<DebateRound, string> = {
     opening: 'Give a compelling opening statement (2-3 paragraphs). Introduce your perspective and main thesis.',
     arguments: 'Present 2-3 strong arguments supporting your position. Reference facts, logic, or examples.',
@@ -186,7 +226,7 @@ Mimic how they would ACTUALLY speak in a debate setting. Don't just talk ABOUT t
 You are playing ${expert.name}, a fictional expert character.
 Stay consistent with their personality: ${expert.personality}`;
 
-  const prompt = `You are ${expert.name}, ${expert.expertise}.
+  return `You are ${expert.name}, ${expert.expertise}.
 Your background: ${expert.background}
 Your position on this topic: ${expert.position}
 ${realPersonInstructions}
@@ -203,9 +243,66 @@ ${expert.isReal
   ? `Remember: You ARE ${expert.name}. Speak, think, and argue exactly as they would. Use their voice, their style, their way of presenting ideas. The audience should feel like they're hearing the real ${expert.name}.`
   : `Stay in character as ${expert.name}.`}
 
+IMPORTANT FORMATTING RULES:
+- Write ONLY in first person as ${expert.name} speaking directly
+- DO NOT include third-person narrations, stage directions, or action descriptions
+- DO NOT use asterisks (*) or italics to describe actions like "*adjusts glasses*" or "*speaking in a measured tone*"
+- DO NOT describe your own physical actions or mannerisms
+- Write as if you are speaking directly to the audience - just your words, nothing else
+- Your personality and communication style should come through in HOW you speak, not through descriptions of how you're speaking
+
 Keep it engaging and substantive but not too long (150-250 words).
 
 Your response:`;
+}
+
+// Generate a debate response for a specific expert and round (streaming version)
+export async function generateDebateResponseStream(
+  expert: Expert,
+  topic: DebateTopic,
+  round: DebateRound,
+  onChunk: (chunk: string) => void,
+  previousMessages: string[] = [],
+  otherExperts: Expert[] = []
+): Promise<string> {
+  const model = getAIModel();
+  const prompt = buildDebatePrompt(expert, topic, round, previousMessages, otherExperts);
+
+  try {
+    const result = streamText({
+      model,
+      prompt,
+      temperature: 0.8, // Higher for more personality
+    });
+
+    let fullText = '';
+    for await (const chunk of result.textStream) {
+      fullText += chunk;
+      // Send chunk as-is for streaming (we'll do final cleaning at the end)
+      onChunk(chunk);
+    }
+
+    // Final cleaning pass on the complete text
+    const cleanedText = cleanText(fullText);
+    
+    return cleanedText;
+  } catch (error) {
+    console.error('Error generating debate response:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to generate response for ${expert.name}: ${errorMessage}`);
+  }
+}
+
+// Generate a debate response for a specific expert and round
+export async function generateDebateResponse(
+  expert: Expert,
+  topic: DebateTopic,
+  round: DebateRound,
+  previousMessages: string[] = [],
+  otherExperts: Expert[] = []
+): Promise<string> {
+  const model = getAIModel();
+  const prompt = buildDebatePrompt(expert, topic, round, previousMessages, otherExperts);
 
   try {
     const { text } = await generateText({
@@ -214,7 +311,7 @@ Your response:`;
       temperature: 0.8, // Higher for more personality
     });
 
-    return text.trim();
+    return cleanText(text);
   } catch (error) {
     console.error('Error generating debate response:', error);
     const errorMessage = error instanceof Error ? error.message : String(error);

@@ -6,6 +6,7 @@ interface DebateStore extends DebateState {
   // Actions
   setCurrentDebate: (debate: Debate | null) => void;
   addMessage: (message: DebateMessage) => void;
+  updateMessageContent: (expertId: string, round: DebateRound, content: string) => void;
   setCurrentRound: (round: DebateRound) => void;
   completeDebate: () => void;
   addVote: (expertId: string) => void;
@@ -30,10 +31,37 @@ export const useDebateStore = create<DebateStore>()(
       addMessage: (message) =>
         set((state) => {
           if (!state.currentDebate) return state;
+          
+          // Prevent duplicate messages: check if this expert already has a message in this round
+          const duplicate = state.currentDebate.messages.find(
+            (m) => m.expertId === message.expertId && m.round === message.round
+          );
+          
+          if (duplicate) {
+            console.warn(`Duplicate message prevented: ${message.expertId} in ${message.round}`);
+            return state; // Don't add duplicate
+          }
+          
           return {
             currentDebate: {
               ...state.currentDebate,
               messages: [...state.currentDebate.messages, message],
+            },
+          };
+        }),
+
+      updateMessageContent: (expertId, round, content) =>
+        set((state) => {
+          if (!state.currentDebate) return state;
+          
+          return {
+            currentDebate: {
+              ...state.currentDebate,
+              messages: state.currentDebate.messages.map((m) =>
+                m.expertId === expertId && m.round === round
+                  ? { ...m, content }
+                  : m
+              ),
             },
           };
         }),
