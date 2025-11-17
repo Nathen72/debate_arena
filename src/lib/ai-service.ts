@@ -1,17 +1,35 @@
 import { generateText } from 'ai';
-import { openai } from '@ai-sdk/openai';
-import { anthropic } from '@ai-sdk/anthropic';
+import { createOpenAI } from '@ai-sdk/openai';
+import { createAnthropic } from '@ai-sdk/anthropic';
 import type { Expert, DebateTopic, DebateRound, AIProvider } from '@/types';
 
 // Get AI provider configuration
 function getAIModel(provider?: AIProvider) {
+  const openaiKey = import.meta.env.VITE_OPENAI_API_KEY;
+  const anthropicKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
   const defaultProvider = (import.meta.env.VITE_DEFAULT_AI_PROVIDER || 'openai') as AIProvider;
-  const selectedProvider = provider || defaultProvider;
+  
+  // Prefer OpenAI if available (works better in browser due to CORS)
+  // Only use Anthropic if explicitly requested and OpenAI is not available
+  const selectedProvider = provider || (openaiKey ? 'openai' : (anthropicKey ? 'anthropic' : defaultProvider));
 
   if (selectedProvider === 'anthropic') {
-    return anthropic('claude-3-5-sonnet-20241022');
+    if (!anthropicKey) {
+      throw new Error('Anthropic API key is missing');
+    }
+    const anthropicProvider = createAnthropic({
+      apiKey: anthropicKey,
+    });
+    return anthropicProvider('claude-3-5-sonnet-20241022');
   }
-  return openai('gpt-4-turbo-preview');
+  
+  if (!openaiKey) {
+    throw new Error('OpenAI API key is missing');
+  }
+  const openaiProvider = createOpenAI({
+    apiKey: openaiKey,
+  });
+  return openaiProvider('gpt-4-turbo-preview');
 }
 
 // Generate debate experts based on topic
