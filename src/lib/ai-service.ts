@@ -10,14 +10,16 @@ function getAIModel(provider?: AIProvider) {
   const anthropicKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
   const openrouterKey = import.meta.env.VITE_OPENROUTER_API_KEY;
   const defaultProvider = (import.meta.env.VITE_DEFAULT_AI_PROVIDER || 'openai') as AIProvider;
-  const openrouterModel = import.meta.env.VITE_OPENROUTER_MODEL || 'openai/gpt-4-turbo-preview';
+  const openrouterModel = import.meta.env.VITE_OPENROUTER_MODEL || 'anthropic/claude-3.5-sonnet';
 
   // Determine which provider to use
+  // Priority: OpenAI > OpenRouter (with Anthropic models) > Anthropic (direct)
+  // Note: Using Anthropic via OpenRouter is more reliable than direct browser access
   // Both OpenAI and Anthropic now support browser requests (Anthropic as of Aug 2024)
   const selectedProvider = provider ||
     (openaiKey ? 'openai' :
-     (anthropicKey ? 'anthropic' :
-      (openrouterKey ? 'openrouter' : defaultProvider)));
+     (openrouterKey ? 'openrouter' :
+      (anthropicKey ? 'anthropic' : defaultProvider)));
 
   // OpenRouter provider
   if (selectedProvider === 'openrouter') {
@@ -26,8 +28,11 @@ function getAIModel(provider?: AIProvider) {
     }
     const openrouterProvider = createOpenRouter({
       apiKey: openrouterKey,
+      baseURL: 'https://openrouter.ai/api/v1',
     });
-    return openrouterProvider(openrouterModel);
+    return openrouterProvider(openrouterModel, {
+      maxTokens: 1500, // Set at model level to ensure it's used
+    });
   }
 
   // Anthropic provider
@@ -35,6 +40,7 @@ function getAIModel(provider?: AIProvider) {
     if (!anthropicKey) {
       throw new Error('Anthropic API key is missing');
     }
+    console.log('Using Anthropic provider directly');
     const anthropicProvider = createAnthropic({
       apiKey: anthropicKey,
       // Enable CORS support for browser requests (as of August 2024)
@@ -43,7 +49,13 @@ function getAIModel(provider?: AIProvider) {
         'anthropic-dangerous-direct-browser-access': 'true',
       },
     });
-    return anthropicProvider('claude-3-5-sonnet-20241022');
+    // Use the correct model identifier format as defined by the SDK
+    // Valid formats: 'claude-sonnet-4-5', 'claude-3-7-sonnet-latest', etc.
+    // See @ai-sdk/anthropic type definitions for all valid model names
+    const modelName = 'claude-sonnet-4-5';
+    const model = anthropicProvider(modelName);
+    console.log('Anthropic model configured:', modelName);
+    return model;
   }
 
   // OpenAI provider (default)
@@ -94,10 +106,17 @@ Return ONLY valid JSON in this exact format, no markdown or extra text:
       model,
       prompt,
       temperature: 0.8,
+      maxTokens: 1500, // Reduced to work with available credits (can afford 2666)
     });
 
     // Parse the JSON response
-    const parsed = JSON.parse(text);
+    // Handle cases where the response might be wrapped in markdown code blocks
+    let jsonText = text.trim();
+    // Remove markdown code block markers if present
+    if (jsonText.startsWith('```')) {
+      jsonText = jsonText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+    }
+    const parsed = JSON.parse(jsonText);
 
     // Add IDs to experts
     return parsed.experts.map((expert: Omit<Expert, 'id'>, index: number) => ({
@@ -106,7 +125,8 @@ Return ONLY valid JSON in this exact format, no markdown or extra text:
     }));
   } catch (error) {
     console.error('Error generating experts:', error);
-    throw new Error('Failed to generate debate experts');
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to generate debate experts: ${errorMessage}`);
   }
 }
 
@@ -157,12 +177,14 @@ Your response:`;
       model,
       prompt,
       temperature: 0.7,
+      maxTokens: 1000, // Reduced for debate responses
     });
 
     return text.trim();
   } catch (error) {
     console.error('Error generating debate response:', error);
-    throw new Error(`Failed to generate response for ${expert.name}`);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to generate response for ${expert.name}: ${errorMessage}`);
   }
 }
 
