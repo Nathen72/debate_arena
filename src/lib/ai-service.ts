@@ -13,6 +13,7 @@ function getAIModel(provider?: AIProvider) {
   const openrouterModel = import.meta.env.VITE_OPENROUTER_MODEL || 'openai/gpt-4-turbo-preview';
 
   // Determine which provider to use
+  // Both OpenAI and Anthropic now support browser requests (Anthropic as of Aug 2024)
   const selectedProvider = provider ||
     (openaiKey ? 'openai' :
      (anthropicKey ? 'anthropic' :
@@ -36,6 +37,11 @@ function getAIModel(provider?: AIProvider) {
     }
     const anthropicProvider = createAnthropic({
       apiKey: anthropicKey,
+      // Enable CORS support for browser requests (as of August 2024)
+      // See: https://simonw.substack.com/p/claudes-api-now-supports-cors-requests
+      headers: {
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
     });
     return anthropicProvider('claude-3-5-sonnet-20241022');
   }
