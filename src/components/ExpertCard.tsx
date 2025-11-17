@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Badge } from 'lucide-react';
+import { Badge, Star } from 'lucide-react';
 import type { Expert } from '@/types';
 
 interface ExpertCardProps {
@@ -42,9 +42,17 @@ export function ExpertCard({ expert, delay = 0, onClick }: ExpertCardProps) {
           {expert.avatar}
         </motion.div>
         <div className="flex-1 min-w-0">
-          <h3 className="text-xl font-display font-bold text-vintage-ink mb-1">
-            {expert.name}
-          </h3>
+          <div className="flex items-start gap-2 mb-1">
+            <h3 className="text-xl font-display font-bold text-vintage-ink flex-1">
+              {expert.name}
+            </h3>
+            {expert.isReal && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-bold bg-primary-500 text-white rounded-full" title="Real-world expert">
+                <Star className="w-3 h-3 fill-current" />
+                REAL
+              </span>
+            )}
+          </div>
           <p className="text-sm text-vintage-brown font-medium">
             {expert.expertise}
           </p>
@@ -67,6 +75,13 @@ export function ExpertCard({ expert, delay = 0, onClick }: ExpertCardProps) {
       <p className="text-sm text-vintage-darkBrown/90 mb-3 italic">
         "{expert.background}"
       </p>
+
+      {/* Notable Works (for real experts) */}
+      {expert.isReal && expert.notableWorks && (
+        <p className="text-xs text-primary-600 mb-2 font-medium">
+          Notable: {expert.notableWorks}
+        </p>
+      )}
 
       {/* Personality */}
       <p className="text-xs text-vintage-brown">

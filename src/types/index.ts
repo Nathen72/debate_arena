@@ -7,6 +7,8 @@ export interface Expert {
   avatar: string; // emoji or image url
   personality: string;
   background: string;
+  isReal: boolean; // true if based on real person, false if fictional
+  notableWorks?: string; // notable works, books, quotes (for real people)
 }
 
 export interface DebateTopic {
