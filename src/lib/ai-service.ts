@@ -30,9 +30,7 @@ function getAIModel(provider?: AIProvider) {
       apiKey: openrouterKey,
       baseURL: 'https://openrouter.ai/api/v1',
     });
-    return openrouterProvider(openrouterModel, {
-      maxTokens: 1500, // Set at model level to ensure it's used
-    });
+    return openrouterProvider(openrouterModel);
   }
 
   // Anthropic provider
@@ -69,34 +67,50 @@ function getAIModel(provider?: AIProvider) {
 }
 
 // Generate debate experts based on topic
-export async function generateExperts(topic: DebateTopic): Promise<Expert[]> {
+export async function generateExperts(
+  topic: DebateTopic,
+  allowFictional: boolean = false
+): Promise<Expert[]> {
   const model = getAIModel();
 
-  const prompt = `You are an expert at creating diverse, interesting debate participants.
+  const expertTypeInstruction = allowFictional
+    ? "Generate 3-5 experts who would have interesting perspectives on this topic. You may include BOTH real-world experts AND fictional experts. For real experts, use their actual names, backgrounds, and known positions. For fictional experts, create believable characters."
+    : "Generate 3-5 REAL-WORLD experts who would have interesting perspectives on this topic. These MUST be actual, well-known people (living or historical) who have publicly expressed views or have expertise relevant to this topic. Include both supporters and critics, and optionally a neutral expert.";
+
+  const prompt = `You are an expert at identifying relevant domain experts for debates.
 
 Given this debate topic: "${topic.title}"
 Description: ${topic.description}
 
-Generate 3-5 unique experts who would have interesting perspectives on this topic. Include both supporters and critics, and optionally a neutral moderator.
+${expertTypeInstruction}
 
 For each expert, provide:
-1. A distinctive name (can be real or fictional)
+1. Their REAL name (for real people) or a distinctive fictional name
 2. Their area of expertise
-3. Their position (pro, con, or neutral)
+3. Their likely position on this specific topic (pro, con, or neutral)
 4. A single emoji that represents them
-5. A brief personality description (communication style, approach)
-6. A one-line background
+5. A detailed personality description including their communication style, known speaking patterns, catchphrases, or mannerisms
+6. Their background and credentials
+7. Notable works, quotes, or public statements (for real people)
+8. Whether they are real (true) or fictional (false)
+
+Examples of real experts for different topics:
+- Commercial Space Flight: Elon Musk (pro), Neil deGrasse Tyson (neutral), critics of privatization
+- Climate Change: Greta Thunberg, Bill Nye, relevant scientists
+- AI Ethics: Sam Altman, Timnit Gebru, Stuart Russell
 
 Return ONLY valid JSON in this exact format, no markdown or extra text:
 {
   "experts": [
     {
-      "name": "Dr. Sarah Chen",
-      "expertise": "AI Ethics Researcher",
+      "name": "Elon Musk",
+      "expertise": "SpaceX CEO & Commercial Space Pioneer",
       "position": "pro",
-      "avatar": "👩‍🔬",
-      "personality": "Analytical and optimistic, speaks with careful precision",
-      "background": "PhD in Computer Science, specializing in ethical AI development"
+      "avatar": "🚀",
+      "personality": "Direct, ambitious, often uses humor and memes, thinks in first principles, speaks with bold confidence about future possibilities. Known for saying things like 'Making life multiplanetary' and being provocatively optimistic.",
+      "background": "Founder of SpaceX, Tesla, and other ventures. Revolutionized private space industry with reusable rockets.",
+      "notableWorks": "Founded SpaceX in 2002, achieved first commercial spacecraft to ISS, developed Falcon Heavy and Starship",
+      "isReal": true
     }
   ]
 }`;
@@ -105,8 +119,7 @@ Return ONLY valid JSON in this exact format, no markdown or extra text:
     const { text } = await generateText({
       model,
       prompt,
-      temperature: 0.8,
-      maxTokens: 1500, // Reduced to work with available credits (can afford 2666)
+      temperature: 0.7, // Lower temperature for more factual accuracy
     });
 
     // Parse the JSON response
@@ -118,10 +131,11 @@ Return ONLY valid JSON in this exact format, no markdown or extra text:
     }
     const parsed = JSON.parse(jsonText);
 
-    // Add IDs to experts
+    // Add IDs to experts and ensure isReal field exists
     return parsed.experts.map((expert: Omit<Expert, 'id'>, index: number) => ({
       ...expert,
       id: `expert-${Date.now()}-${index}`,
+      isReal: expert.isReal ?? !allowFictional, // Default to real if not specified
     }));
   } catch (error) {
     console.error('Error generating experts:', error);
@@ -155,10 +169,27 @@ export async function generateDebateResponse(
     ? `\n\nOther participants: ${otherExperts.map(e => `${e.name} (${e.position})`).join(', ')}`
     : '';
 
+  const realPersonInstructions = expert.isReal
+    ? `
+CRITICAL: You are roleplaying as the REAL ${expert.name}. You must:
+- Match their actual communication style, tone, and mannerisms EXACTLY
+- Use phrases, expressions, or rhetorical devices they're known for
+- Reference their known work, achievements, or public statements when relevant
+- Adopt their characteristic way of thinking and arguing
+- Include subtle personality quirks or catchphrases they're known for
+${expert.notableWorks ? `- You may reference their notable work: ${expert.notableWorks}` : ''}
+
+Study their personality carefully: ${expert.personality}
+
+Mimic how they would ACTUALLY speak in a debate setting. Don't just talk ABOUT them - BE them.`
+    : `
+You are playing ${expert.name}, a fictional expert character.
+Stay consistent with their personality: ${expert.personality}`;
+
   const prompt = `You are ${expert.name}, ${expert.expertise}.
 Your background: ${expert.background}
-Your personality: ${expert.personality}
 Your position on this topic: ${expert.position}
+${realPersonInstructions}
 
 Topic: ${topic.title}
 ${topic.description}
@@ -168,7 +199,11 @@ ${roundInstructions[round]}
 ${otherExpertsInfo}
 ${contextMessages}
 
-Respond as ${expert.name} in character. Be authentic to your position (${expert.position}) and personality. Keep it engaging and substantive but not too long (150-250 words).
+${expert.isReal
+  ? `Remember: You ARE ${expert.name}. Speak, think, and argue exactly as they would. Use their voice, their style, their way of presenting ideas. The audience should feel like they're hearing the real ${expert.name}.`
+  : `Stay in character as ${expert.name}.`}
+
+Keep it engaging and substantive but not too long (150-250 words).
 
 Your response:`;
 
@@ -176,8 +211,7 @@ Your response:`;
     const { text } = await generateText({
       model,
       prompt,
-      temperature: 0.7,
-      maxTokens: 1000, // Reduced for debate responses
+      temperature: 0.8, // Higher for more personality
     });
 
     return text.trim();

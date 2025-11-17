@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Loader2, Sparkles } from 'lucide-react';
+import { Loader2, Sparkles, Users } from 'lucide-react';
 import { generateExperts } from '@/lib/ai-service';
 import { ExpertCard } from './ExpertCard';
 import type { DebateTopic, Expert } from '@/types';
@@ -17,32 +17,43 @@ export function ExpertGeneration({
   onBack,
 }: ExpertGenerationProps) {
   const [experts, setExperts] = useState<Expert[]>([]);
-  const [isGenerating, setIsGenerating] = useState(true);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [allowFictional, setAllowFictional] = useState(false);
+  const [showOptions, setShowOptions] = useState(true);
 
-  useEffect(() => {
-    async function generate() {
-      try {
-        setIsGenerating(true);
-        setError(null);
-        const generatedExperts = await generateExperts(topic);
-        setExperts(generatedExperts);
-        setIsGenerating(false);
-      } catch (err) {
-        console.error(err);
-        setError(
-          'Failed to generate experts. Please check your API key and try again.'
-        );
-        setIsGenerating(false);
-      }
+  const handleGenerate = async () => {
+    try {
+      setShowOptions(false);
+      setIsGenerating(true);
+      setError(null);
+      const generatedExperts = await generateExperts(topic, allowFictional);
+      setExperts(generatedExperts);
+      setIsGenerating(false);
+    } catch (err) {
+      console.error(err);
+      setError(
+        'Failed to generate experts. Please check your API key and try again.'
+      );
+      setIsGenerating(false);
+      setShowOptions(true);
     }
-
-    generate();
-  }, [topic]);
+  };
 
   const handleStartDebate = () => {
     if (experts.length > 0) {
       onExpertsGenerated(experts);
+    }
+  };
+
+  const handleBack = () => {
+    if (experts.length > 0 && !showOptions) {
+      // If experts are already generated, go back to options
+      setExperts([]);
+      setShowOptions(true);
+    } else {
+      // Otherwise go back to topic selection
+      onBack();
     }
   };
 
@@ -56,10 +67,10 @@ export function ExpertGeneration({
           className="text-center mb-8"
         >
           <button
-            onClick={onBack}
+            onClick={handleBack}
             className="text-vintage-brown hover:text-vintage-darkBrown mb-4 inline-block"
           >
-            ← Back to topics
+            ← {experts.length > 0 && !showOptions ? 'Back to options' : 'Back to topics'}
           </button>
           <h2 className="text-4xl md:text-5xl font-display font-bold text-vintage-ink mb-4">
             {topic.title}
@@ -68,6 +79,73 @@ export function ExpertGeneration({
             {topic.description}
           </p>
         </motion.div>
+
+        {/* Expert Type Options */}
+        {showOptions && !isGenerating && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="max-w-2xl mx-auto mb-8"
+          >
+            <div className="card-vintage p-8">
+              <div className="flex items-center justify-center gap-2 mb-6">
+                <Users className="w-6 h-6 text-primary-500" />
+                <h3 className="text-2xl font-display font-bold text-vintage-ink">
+                  Choose Expert Type
+                </h3>
+              </div>
+
+              <div className="space-y-4 mb-6">
+                <label className="flex items-start gap-4 p-4 border-2 border-vintage-tan rounded-lg cursor-pointer hover:border-primary-400 transition-colors bg-vintage-cream">
+                  <input
+                    type="radio"
+                    name="expertType"
+                    checked={!allowFictional}
+                    onChange={() => setAllowFictional(false)}
+                    className="mt-1 w-5 h-5 text-primary-500"
+                  />
+                  <div className="flex-1">
+                    <div className="font-bold text-vintage-ink mb-1">
+                      Real-World Experts (Recommended)
+                    </div>
+                    <p className="text-sm text-vintage-darkBrown">
+                      Generate debates with actual experts in the field who have publicly expressed views on this topic. Their responses will mimic their real personalities and communication styles.
+                    </p>
+                    <p className="text-xs text-primary-600 mt-2">
+                      Examples: Elon Musk, Neil deGrasse Tyson, experts with known expertise
+                    </p>
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-4 p-4 border-2 border-vintage-tan rounded-lg cursor-pointer hover:border-primary-400 transition-colors bg-vintage-cream">
+                  <input
+                    type="radio"
+                    name="expertType"
+                    checked={allowFictional}
+                    onChange={() => setAllowFictional(true)}
+                    className="mt-1 w-5 h-5 text-primary-500"
+                  />
+                  <div className="flex-1">
+                    <div className="font-bold text-vintage-ink mb-1">
+                      Mixed (Real & Fictional)
+                    </div>
+                    <p className="text-sm text-vintage-darkBrown">
+                      Include both real-world experts and fictional characters with relevant expertise. Good for creative or hypothetical debates.
+                    </p>
+                  </div>
+                </label>
+              </div>
+
+              <button
+                onClick={handleGenerate}
+                className="btn-primary w-full text-lg"
+              >
+                <Sparkles className="w-5 h-5 inline mr-2" />
+                Generate Expert Panel
+              </button>
+            </div>
+          </motion.div>
+        )}
 
         {/* Loading State */}
         {isGenerating && (
@@ -84,7 +162,7 @@ export function ExpertGeneration({
               <Sparkles className="w-5 h-5 text-primary-400" />
             </div>
             <p className="text-vintage-brown mt-4">
-              Finding the most interesting perspectives
+              {allowFictional ? 'Finding real and fictional experts' : 'Finding real-world domain experts'}
             </p>
           </motion.div>
         )}
