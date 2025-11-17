@@ -44,7 +44,7 @@ export interface DebateState {
 }
 
 // AI Provider types
-export type AIProvider = 'openai' | 'anthropic';
+export type AIProvider = 'openai' | 'anthropic' | 'openrouter';
 
 export interface AIConfig {
   provider: AIProvider;
