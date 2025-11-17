@@ -129,7 +129,8 @@ export function DebateView({ debate, onComplete }: DebateViewProps) {
           updateMessageContent(expert.id, currentRound.key, accumulatedContent);
         },
         previousMessages,
-        otherExperts
+        otherExperts,
+        debate.selectedModel
       );
 
       // Final update with cleaned text (handles any post-processing)

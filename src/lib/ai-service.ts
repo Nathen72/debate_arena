@@ -5,12 +5,12 @@ import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import type { Expert, DebateTopic, DebateRound, AIProvider, Debate, DebateSummary } from '@/types';
 
 // Get AI provider configuration
-function getAIModel(provider?: AIProvider) {
+function getAIModel(provider?: AIProvider, customModel?: string) {
   const openaiKey = import.meta.env.VITE_OPENAI_API_KEY;
   const anthropicKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
   const openrouterKey = import.meta.env.VITE_OPENROUTER_API_KEY;
   const defaultProvider = (import.meta.env.VITE_DEFAULT_AI_PROVIDER || 'openai') as AIProvider;
-  const openrouterModel = import.meta.env.VITE_OPENROUTER_MODEL || 'anthropic/claude-3.5-sonnet';
+  const openrouterModel = customModel || import.meta.env.VITE_OPENROUTER_MODEL || 'anthropic/claude-3.5-sonnet';
 
   // Determine which provider to use
   // Priority: OpenAI > OpenRouter (with Anthropic models) > Anthropic (direct)
@@ -70,6 +70,7 @@ interface ExpertGenerationOptions {
   numExperts?: number;
   tone?: 'balanced' | 'formal' | 'casual';
   diversity?: 'balanced' | 'diverse' | 'focused';
+  model?: string; // OpenRouter model ID
 }
 
 // Generate debate experts based on topic
@@ -78,8 +79,8 @@ export async function generateExperts(
   allowFictional: boolean = false,
   options: ExpertGenerationOptions = {}
 ): Promise<Expert[]> {
-  const model = getAIModel();
-  const { numExperts = 3, tone = 'balanced', diversity = 'balanced' } = options;
+  const { numExperts = 3, tone = 'balanced', diversity = 'balanced', model: customModel } = options;
+  const model = getAIModel(undefined, customModel);
 
   const expertTypeInstruction = allowFictional
     ? `Generate ${numExperts} experts who would have interesting perspectives on this topic. You may include BOTH real-world experts AND fictional experts. For real experts, use their actual names, backgrounds, and known positions. For fictional experts, create believable characters.`
@@ -294,9 +295,10 @@ export async function generateDebateResponseStream(
   round: DebateRound,
   onChunk: (chunk: string) => void,
   previousMessages: string[] = [],
-  otherExperts: Expert[] = []
+  otherExperts: Expert[] = [],
+  customModel?: string
 ): Promise<string> {
-  const model = getAIModel();
+  const model = getAIModel(undefined, customModel);
   const prompt = buildDebatePrompt(expert, topic, round, previousMessages, otherExperts);
 
   try {
@@ -330,9 +332,10 @@ export async function generateDebateResponse(
   topic: DebateTopic,
   round: DebateRound,
   previousMessages: string[] = [],
-  otherExperts: Expert[] = []
+  otherExperts: Expert[] = [],
+  customModel?: string
 ): Promise<string> {
-  const model = getAIModel();
+  const model = getAIModel(undefined, customModel);
   const prompt = buildDebatePrompt(expert, topic, round, previousMessages, otherExperts);
 
   try {
@@ -351,8 +354,8 @@ export async function generateDebateResponse(
 }
 
 // Generate debate summary and verdict
-export async function generateDebateSummary(debate: Debate): Promise<DebateSummary> {
-  const model = getAIModel();
+export async function generateDebateSummary(debate: Debate, customModel?: string): Promise<DebateSummary> {
+  const model = getAIModel(undefined, customModel);
 
   // Organize messages by expert and round
   const messagesByExpert = debate.experts.map((expert) => {

@@ -31,7 +31,7 @@ export function VotingPanel({ debate, onComplete }: VotingPanelProps) {
     if (!debateWithSummary.summary) {
       setIsGeneratingSummary(true);
       try {
-        const summary = await generateDebateSummary(debateWithSummary);
+        const summary = await generateDebateSummary(debateWithSummary, debateWithSummary.selectedModel);
         setDebateSummary(summary);
         setShowSummary(true);
       } catch (error) {

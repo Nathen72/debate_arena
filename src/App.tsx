@@ -31,7 +31,7 @@ function App() {
     setAppState('expert-generation');
   };
 
-  const handleExpertsGenerated = (experts: Expert[]) => {
+  const handleExpertsGenerated = (experts: Expert[], selectedModel?: string) => {
     if (!selectedTopic) return;
 
     const debate: Debate = {
@@ -42,6 +42,7 @@ function App() {
       currentRound: 'opening',
       isComplete: false,
       createdAt: new Date(),
+      selectedModel,
     };
 
     setCurrentDebate(debate);

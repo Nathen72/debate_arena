@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, Sparkles, Users, ChevronDown, ChevronUp, Settings } from 'lucide-react';
-import { generateExperts } from '@/lib/ai-service';
+import { generateExperts, validateAPIKeys } from '@/lib/ai-service';
+import { OPENROUTER_MODELS, DEFAULT_OPENROUTER_MODEL } from '@/lib/openrouter-models';
 import { ExpertCard } from './ExpertCard';
 import type { DebateTopic, Expert } from '@/types';
 
 interface ExpertGenerationProps {
   topic: DebateTopic;
-  onExpertsGenerated: (experts: Expert[]) => void;
+  onExpertsGenerated: (experts: Expert[], selectedModel?: string) => void;
   onBack: () => void;
 }
 
@@ -25,6 +26,9 @@ export function ExpertGeneration({
   const [numExperts, setNumExperts] = useState(3);
   const [tone, setTone] = useState<'balanced' | 'formal' | 'casual'>('balanced');
   const [diversity, setDiversity] = useState<'balanced' | 'diverse' | 'focused'>('balanced');
+  const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_OPENROUTER_MODEL);
+  const { provider } = validateAPIKeys();
+  const isUsingOpenRouter = provider === 'openrouter';
 
   const handleGenerate = async () => {
     try {
@@ -35,6 +39,7 @@ export function ExpertGeneration({
         numExperts,
         tone,
         diversity,
+        model: isUsingOpenRouter ? selectedModel : undefined,
       });
       setExperts(generatedExperts);
       setIsGenerating(false);
@@ -50,7 +55,7 @@ export function ExpertGeneration({
 
   const handleStartDebate = () => {
     if (experts.length > 0) {
-      onExpertsGenerated(experts);
+      onExpertsGenerated(experts, isUsingOpenRouter ? selectedModel : undefined);
     }
   };
 
@@ -244,6 +249,33 @@ export function ExpertGeneration({
                             {diversity === 'focused' && 'Experts with similar expertise but different angles'}
                           </p>
                         </div>
+
+                        {/* OpenRouter Model Selection */}
+                        {isUsingOpenRouter && (
+                          <div>
+                            <label className="block text-sm font-medium text-vintage-ink mb-2">
+                              AI Model
+                            </label>
+                            <select
+                              value={selectedModel}
+                              onChange={(e) => setSelectedModel(e.target.value)}
+                              className="w-full px-3 py-2 bg-vintage-paper border-2 border-vintage-tan rounded-lg text-vintage-ink focus:outline-none focus:border-primary-400 transition-colors"
+                            >
+                              {OPENROUTER_MODELS.map((model) => (
+                                <option key={model.id} value={model.id}>
+                                  {model.name} - {model.description}
+                                </option>
+                              ))}
+                            </select>
+                            <p className="text-xs text-vintage-brown mt-2">
+                              {OPENROUTER_MODELS.find((m) => m.id === selectedModel)?.pricing && (
+                                <>
+                                  Pricing: {OPENROUTER_MODELS.find((m) => m.id === selectedModel)?.pricing?.prompt} prompt, {OPENROUTER_MODELS.find((m) => m.id === selectedModel)?.pricing?.completion} completion
+                                </>
+                              )}
+                            </p>
+                          </div>
+                        )}
                       </div>
                     </motion.div>
                   )}

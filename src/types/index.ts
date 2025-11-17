@@ -43,6 +43,7 @@ export interface Debate {
   votes?: Record<string, number>; // expertId -> vote count
   summary?: DebateSummary; // AI-generated summary and verdict
   createdAt: Date;
+  selectedModel?: string; // OpenRouter model ID (if using OpenRouter)
 }
 
 export interface DebateState {
@@ -55,7 +56,18 @@ export interface DebateState {
 // AI Provider types
 export type AIProvider = 'openai' | 'anthropic' | 'openrouter';
 
+export interface OpenRouterModel {
+  id: string;
+  name: string;
+  description: string;
+  pricing?: {
+    prompt: string;
+    completion: string;
+  };
+}
+
 export interface AIConfig {
   provider: AIProvider;
   apiKey: string;
+  model?: string; // For OpenRouter model selection
 }
